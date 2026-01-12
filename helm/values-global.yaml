@@ -1,0 +1,5 @@
+# Global defaults (optional). Not used by default; kept for future overrides.
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+

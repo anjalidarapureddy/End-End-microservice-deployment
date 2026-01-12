@@ -1,0 +1,46 @@
+# QAT environment values for backend services
+env: qat
+
+replicaCount: 3
+
+image:
+  repository: myrepo/backend
+  tag: qat-release
+  
+service:
+  type: ClusterIP
+  port: 8000
+  targetPort: 8000
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+hpa:
+  enabled: true
+  min: 3
+  max: 10
+  cpu: 70
+  memory: 80
+
+config:
+  mongoUrl: mongodb://mongo.app-qat.svc.cluster.local:27017/appdb
+  redisHost: redis.app-qat.svc.cluster.local
+  kafkaBroker: kafka-0.kafka.app-qat.svc.cluster.local:9092,kafka-1.kafka.app-qat.svc.cluster.local:9092,kafka-2.kafka.app-qat.svc.cluster.local:9092
+
+secrets:
+  mongoUser: qatuser
+  mongoPassword: ********
+
+env:
+  ENVIRONMENT: "qat"
+  LOG_LEVEL: "INFO"
+  MONGODB_URI: "mongodb://mongo.app-qat.svc.cluster.local:27017/appdb"
+  REDIS_HOST: "redis.app-qat.svc.cluster.local"
+  REDIS_PORT: "6379"
+  KAFKA_BROKERS: "kafka-0.kafka.app-qat.svc.cluster.local:9092,kafka-1.kafka.app-qat.svc.cluster.local:9092,kafka-2.kafka.app-qat.svc.cluster.local:9092"
+

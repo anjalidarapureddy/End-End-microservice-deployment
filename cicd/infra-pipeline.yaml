@@ -1,0 +1,27 @@
+stages:
+  - deploy
+
+deploy_uat:
+  stage: deploy
+  script:
+    - aws eks update-kubeconfig --name uat-cluster
+    - helm upgrade --install backend helm/backend \
+      -f helm/values-global.yaml \
+      -f helm/backend/values-uat.yaml \
+      --set image.tag=$CI_COMMIT_SHA \
+      -n app-uat
+  only:
+    - main
+
+deploy_prod:
+  stage: deploy
+  when: manual
+  script:
+    - aws eks update-kubeconfig --name prod-cluster
+    - helm upgrade --install backend helm/backend \
+      -f helm/values-global.yaml \
+      -f helm/backend/values-prod.yaml \
+      --set image.tag=$CI_COMMIT_SHA \
+      -n app-prod
+  only:
+    - main

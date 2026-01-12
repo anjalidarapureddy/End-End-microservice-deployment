@@ -1,0 +1,59 @@
+# Default values for kafka
+kafka:
+  replicas: 3
+  image:
+    repository: confluentinc/cp-kafka
+    tag: "7.5.0"
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+  persistence:
+    enabled: true
+    storageClass: "standard"
+    size: 50Gi
+  config:
+    offsets.topic.replication.factor: 3
+    transaction.state.log.replication.factor: 3
+    transaction.state.log.min.isr: 2
+
+zookeeper:
+  replicas: 3
+  image:
+    repository: confluentinc/cp-zookeeper
+    tag: "7.5.0"
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+  persistence:
+    enabled: true
+    storageClass: "standard"
+    size: 10Gi
+
+serviceAccount:
+  create: true
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app
+            operator: In
+            values:
+            - kafka
+        topologyKey: kubernetes.io/hostname
+

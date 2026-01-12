@@ -1,0 +1,46 @@
+# UAT environment values for backend services
+env: uat
+
+replicaCount: 3
+
+image:
+  repository: myrepo/backend
+  tag: uat-release
+  
+service:
+  type: ClusterIP
+  port: 8000
+  targetPort: 8000
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "512Mi"
+  limits:
+    cpu: "1000m"
+    memory: "1Gi"
+
+hpa:
+  enabled: true
+  min: 3
+  max: 15
+  cpu: 70
+  memory: 80
+
+config:
+  mongoUrl: mongodb://mongo.app-uat.svc.cluster.local:27017/appdb
+  redisHost: redis.app-uat.svc.cluster.local
+  kafkaBroker: kafka-0.kafka.app-uat.svc.cluster.local:9092,kafka-1.kafka.app-uat.svc.cluster.local:9092,kafka-2.kafka.app-uat.svc.cluster.local:9092
+
+secrets:
+  mongoUser: uatuser
+  mongoPassword: ********
+
+env:
+  ENVIRONMENT: "uat"
+  LOG_LEVEL: "INFO"
+  MONGODB_URI: "mongodb://mongo.app-uat.svc.cluster.local:27017/appdb"
+  REDIS_HOST: "redis.app-uat.svc.cluster.local"
+  REDIS_PORT: "6379"
+  KAFKA_BROKERS: "kafka-0.kafka.app-uat.svc.cluster.local:9092,kafka-1.kafka.app-uat.svc.cluster.local:9092,kafka-2.kafka.app-uat.svc.cluster.local:9092"
+

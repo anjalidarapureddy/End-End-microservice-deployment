@@ -1,0 +1,533 @@
+pipeline {
+    agent any
+    
+    environment {
+        // Registry configurations
+        REGISTRY_DEV = 'registry-dev.example.com'
+        REGISTRY_AWS = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
+        AWS_REGION = 'us-east-1'
+        
+        // Kubernetes contexts
+        KUBECTL_CONTEXT_DEV = 'dev-cluster'
+        KUBECTL_CONTEXT_QAT = 'qat-cluster'
+        KUBECTL_CONTEXT_UAT = 'uat-eks-cluster'
+        KUBECTL_CONTEXT_PROD = 'prod-eks-cluster'
+        
+        // Helm chart paths
+        HELM_CHART_FRONTEND = './helm/frontend'
+        HELM_CHART_BACKEND = './helm/backend'
+        HELM_CHART_MONGODB = './helm/mongodb'
+        HELM_CHART_REDIS = './helm/redis'
+        HELM_CHART_KAFKA = './helm/kafka'
+    }
+    
+    parameters {
+        choice(
+            name: 'ENVIRONMENT',
+            choices: ['dev', 'qat', 'uat', 'prod'],
+            description: 'Target deployment environment'
+        )
+        choice(
+            name: 'DEPLOYMENT_TYPE',
+            choices: ['all', 'frontend', 'backend', 'infrastructure'],
+            description: 'What to deploy'
+        )
+        booleanParam(
+            name: 'SKIP_TESTS',
+            defaultValue: false,
+            description: 'Skip running tests'
+        )
+        string(
+            name: 'IMAGE_TAG',
+            defaultValue: "${env.BUILD_NUMBER}",
+            description: 'Docker image tag'
+        )
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+                script {
+                    env.GIT_COMMIT_SHORT = sh(
+                        script: 'git rev-parse --short HEAD',
+                        returnStdout: true
+                    ).trim()
+                    env.IMAGE_TAG = params.IMAGE_TAG ?: "${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
+                }
+            }
+        }
+        
+        stage('Build Docker Images') {
+            when {
+                anyOf {
+                    expression { params.DEPLOYMENT_TYPE == 'all' }
+                    expression { params.DEPLOYMENT_TYPE == 'frontend' }
+                    expression { params.DEPLOYMENT_TYPE == 'backend' }
+                }
+            }
+            parallel {
+                stage('Build Frontend') {
+                    when {
+                        anyOf {
+                            expression { params.DEPLOYMENT_TYPE == 'all' }
+                            expression { params.DEPLOYMENT_TYPE == 'frontend' }
+                        }
+                    }
+                    steps {
+                        script {
+                            buildDockerImage('frontend', env.IMAGE_TAG)
+                        }
+                    }
+                }
+                
+                stage('Build Backend Services') {
+                    when {
+                        anyOf {
+                            expression { params.DEPLOYMENT_TYPE == 'all' }
+                            expression { params.DEPLOYMENT_TYPE == 'backend' }
+                        }
+                    }
+                    steps {
+                        script {
+                            def services = ['user-service', 'product-service', 'order-service', 'notification-service', 'analytics-service']
+                            services.each { service ->
+                                buildDockerImage(service, env.IMAGE_TAG)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Run Tests') {
+            when {
+                expression { !params.SKIP_TESTS }
+            }
+            parallel {
+                stage('Unit Tests') {
+                    steps {
+                        script {
+                            sh '''
+                                cd backend
+                                pip install -r requirements.txt
+                                pytest tests/unit/ -v --junitxml=test-results.xml
+                            '''
+                        }
+                    }
+                    post {
+                        always {
+                            junit 'backend/test-results.xml'
+                        }
+                    }
+                }
+                
+                stage('Integration Tests') {
+                    when {
+                        anyOf {
+                            expression { params.ENVIRONMENT == 'qat' }
+                            expression { params.ENVIRONMENT == 'uat' }
+                            expression { params.ENVIRONMENT == 'prod' }
+                        }
+                    }
+                    steps {
+                        script {
+                            sh '''
+                                cd backend
+                                pip install -r requirements.txt
+                                pytest tests/integration/ -v --junitxml=integration-test-results.xml
+                            '''
+                        }
+                    }
+                    post {
+                        always {
+                            junit 'backend/integration-test-results.xml'
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Push Images') {
+            when {
+                anyOf {
+                    expression { params.DEPLOYMENT_TYPE == 'all' }
+                    expression { params.DEPLOYMENT_TYPE == 'frontend' }
+                    expression { params.DEPLOYMENT_TYPE == 'backend' }
+                }
+            }
+            steps {
+                script {
+                    pushDockerImages(env.IMAGE_TAG)
+                }
+            }
+        }
+        
+        stage('Deploy Infrastructure') {
+            when {
+                anyOf {
+                    expression { params.DEPLOYMENT_TYPE == 'all' }
+                    expression { params.DEPLOYMENT_TYPE == 'infrastructure' }
+                }
+            }
+            steps {
+                script {
+                    deployInfrastructure()
+                }
+            }
+        }
+        
+        stage('Deploy Applications') {
+            when {
+                anyOf {
+                    expression { params.DEPLOYMENT_TYPE == 'all' }
+                    expression { params.DEPLOYMENT_TYPE == 'frontend' }
+                    expression { params.DEPLOYMENT_TYPE == 'backend' }
+                }
+            }
+            steps {
+                script {
+                    deployApplications(env.IMAGE_TAG)
+                }
+            }
+        }
+        
+        stage('Smoke Tests') {
+            steps {
+                script {
+                    runSmokeTests()
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            script {
+                def message = """
+                    ✅ Deployment Successful!
+                    Environment: ${params.ENVIRONMENT}
+                    Build: ${env.BUILD_NUMBER}
+                    Image Tag: ${env.IMAGE_TAG}
+                    Commit: ${env.GIT_COMMIT_SHORT}
+                """
+                sendNotification('SUCCESS', message)
+            }
+        }
+        failure {
+            script {
+                def message = """
+                    ❌ Deployment Failed!
+                    Environment: ${params.ENVIRONMENT}
+                    Build: ${env.BUILD_NUMBER}
+                    Check Jenkins console for details.
+                """
+                sendNotification('FAILURE', message)
+            }
+        }
+        always {
+            cleanWs()
+        }
+    }
+}
+
+// Helper functions
+def buildDockerImage(serviceName, tag) {
+    def registry = getRegistry()
+    def imageName = "${registry}/${serviceName}"
+    
+    echo "Building Docker image: ${imageName}:${tag}"
+    
+    if (params.ENVIRONMENT in ['uat', 'prod']) {
+        // AWS ECR login
+        sh """
+            aws ecr get-login-password --region ${env.AWS_REGION} | \
+            docker login --username AWS --password-stdin ${registry}
+        """
+    } else {
+        // On-prem registry login
+        withCredentials([usernamePassword(
+            credentialsId: 'docker-registry-credentials',
+            usernameVariable: 'REGISTRY_USER',
+            passwordVariable: 'REGISTRY_PASS'
+        )]) {
+            sh """
+                echo \$REGISTRY_PASS | docker login ${registry} -u \$REGISTRY_USER --password-stdin
+            """
+        }
+    }
+    
+    sh """
+        docker build -t ${imageName}:${tag} -t ${imageName}:latest ./${serviceName}
+        docker push ${imageName}:${tag}
+        docker push ${imageName}:latest
+    """
+}
+
+def pushDockerImages(tag) {
+    def registry = getRegistry()
+    
+    // Frontend
+    if (params.DEPLOYMENT_TYPE == 'all' || params.DEPLOYMENT_TYPE == 'frontend') {
+        sh "docker push ${registry}/frontend:${tag}"
+        sh "docker push ${registry}/frontend:latest"
+    }
+    
+    // Backend services
+    if (params.DEPLOYMENT_TYPE == 'all' || params.DEPLOYMENT_TYPE == 'backend') {
+        def services = ['user-service', 'product-service', 'order-service', 'notification-service', 'analytics-service']
+        services.each { service ->
+            sh "docker push ${registry}/${service}:${tag}"
+            sh "docker push ${registry}/${service}:latest"
+        }
+    }
+}
+
+def deployInfrastructure() {
+    def namespace = getNamespace()
+    def context = getKubeContext()
+    
+    withKubeConfig([credentialsId: "kubeconfig-${params.ENVIRONMENT}", contextName: context]) {
+        // Deploy MongoDB
+        sh """
+            helm upgrade --install mongodb ${env.HELM_CHART_MONGODB} \
+                --namespace ${namespace} \
+                --create-namespace \
+                --set replicaCount=${getMongoReplicas()} \
+                --set persistence.size=${getMongoStorage()} \
+                --set persistence.storageClass=${getStorageClass()} \
+                --wait --timeout 10m
+        """
+        
+        // Deploy Redis
+        sh """
+            helm upgrade --install redis ${env.HELM_CHART_REDIS} \
+                --namespace ${namespace} \
+                --create-namespace \
+                --set persistence.size=${getRedisStorage()} \
+                --set persistence.storageClass=${getStorageClass()} \
+                --wait --timeout 5m
+        """
+        
+        // Deploy Kafka
+        sh """
+            helm upgrade --install kafka ${env.HELM_CHART_KAFKA} \
+                --namespace ${namespace} \
+                --create-namespace \
+                --set kafka.replicas=3 \
+                --set kafka.persistence.size=${getKafkaStorage()} \
+                --set kafka.persistence.storageClass=${getStorageClass()} \
+                --wait --timeout 10m
+        """
+    }
+}
+
+def deployApplications(tag) {
+    def namespace = getNamespace()
+    def context = getKubeContext()
+    def registry = getRegistry()
+    
+    withKubeConfig([credentialsId: "kubeconfig-${params.ENVIRONMENT}", contextName: context]) {
+        // Deploy Frontend
+        if (params.DEPLOYMENT_TYPE == 'all' || params.DEPLOYMENT_TYPE == 'frontend') {
+            sh """
+                helm upgrade --install frontend ${env.HELM_CHART_FRONTEND} \
+                    --namespace ${namespace} \
+                    --create-namespace \
+                    --set image.repository=${registry}/frontend \
+                    --set image.tag=${tag} \
+                    --set env.ENVIRONMENT=${params.ENVIRONMENT} \
+                    --set autoscaling.minReplicas=${getFrontendMinReplicas()} \
+                    --set autoscaling.maxReplicas=${getFrontendMaxReplicas()} \
+                    --set ingress.className=${getIngressClass()} \
+                    --set ingress.hosts[0].host=${getIngressHost()} \
+                    --wait --timeout 10m
+            """
+        }
+        
+        // Deploy Backend Services
+        if (params.DEPLOYMENT_TYPE == 'all' || params.DEPLOYMENT_TYPE == 'backend') {
+            def services = ['user-service', 'product-service', 'order-service', 'notification-service', 'analytics-service']
+            services.each { service ->
+                sh """
+                    helm upgrade --install ${service} ${env.HELM_CHART_BACKEND} \
+                        --namespace ${namespace} \
+                        --create-namespace \
+                        --set serviceName=${service} \
+                        --set image.repository=${registry}/${service} \
+                        --set image.tag=${tag} \
+                        --set env.ENVIRONMENT=${params.ENVIRONMENT} \
+                        --set env.MONGODB_URI=mongodb://mongodb.${namespace}.svc.cluster.local:27017 \
+                        --set env.REDIS_HOST=redis.${namespace}.svc.cluster.local \
+                        --set env.KAFKA_BROKERS=kafka-0.kafka.${namespace}.svc.cluster.local:9092,kafka-1.kafka.${namespace}.svc.cluster.local:9092,kafka-2.kafka.${namespace}.svc.cluster.local:9092 \
+                        --set autoscaling.minReplicas=${getBackendMinReplicas()} \
+                        --set autoscaling.maxReplicas=${getBackendMaxReplicas()} \
+                        --wait --timeout 10m
+                """
+            }
+        }
+    }
+}
+
+def runSmokeTests() {
+    def namespace = getNamespace()
+    def context = getKubeContext()
+    
+    withKubeConfig([credentialsId: "kubeconfig-${params.ENVIRONMENT}", contextName: context]) {
+        sh """
+            # Wait for services to be ready
+            kubectl wait --for=condition=available --timeout=300s deployment/frontend -n ${namespace} || true
+            
+            # Run smoke tests
+            
+            curl -f https://${getIngressHost()}/health || exit 1
+            echo "Smoke tests passed!"
+        """
+    }
+}
+
+def sendNotification(status, message) {
+    // Slack notification
+    if (env.SLACK_WEBHOOK_URL) {
+        def color = status == 'SUCCESS' ? 'good' : 'danger'
+        slackSend(
+            color: color,
+            message: message,
+            channel: '#deployments'
+        )
+    }
+    
+    // Email notification
+    emailext(
+        subject: "Deployment ${status}: ${params.ENVIRONMENT} - Build #${env.BUILD_NUMBER}",
+        body: message,
+        to: "${env.DEPLOYMENT_TEAM_EMAIL}",
+        mimeType: 'text/html'
+    )
+}
+
+// Environment-specific helper functions
+def getRegistry() {
+    if (params.ENVIRONMENT in ['uat', 'prod']) {
+        return env.REGISTRY_AWS
+    }
+    return env.REGISTRY_DEV
+}
+
+def getNamespace() {
+    return "app-${params.ENVIRONMENT}"
+}
+
+def getKubeContext() {
+    switch(params.ENVIRONMENT) {
+        case 'dev':
+            return env.KUBECTL_CONTEXT_DEV
+        case 'qat':
+            return env.KUBECTL_CONTEXT_QAT
+        case 'uat':
+            return env.KUBECTL_CONTEXT_UAT
+        case 'prod':
+            return env.KUBECTL_CONTEXT_PROD
+        default:
+            return env.KUBECTL_CONTEXT_DEV
+    }
+}
+
+def getStorageClass() {
+    if (params.ENVIRONMENT in ['uat', 'prod']) {
+        return 'gp3'
+    }
+    return 'standard'
+}
+
+def getFrontendMinReplicas() {
+    switch(params.ENVIRONMENT) {
+        case 'dev': return '3'
+        case 'qat': return '3'
+        case 'uat': return '5'
+        case 'prod': return '10'
+        default: return '3'
+    }
+}
+
+def getFrontendMaxReplicas() {
+    switch(params.ENVIRONMENT) {
+        case 'dev': return '10'
+        case 'qat': return '10'
+        case 'uat': return '20'
+        case 'prod': return '50'
+        default: return '10'
+    }
+}
+
+def getBackendMinReplicas() {
+    switch(params.ENVIRONMENT) {
+        case 'dev': return '2'
+        case 'qat': return '3'
+        case 'uat': return '3'
+        case 'prod': return '5'
+        default: return '2'
+    }
+}
+
+def getBackendMaxReplicas() {
+    switch(params.ENVIRONMENT) {
+        case 'dev': return '10'
+        case 'qat': return '10'
+        case 'uat': return '15'
+        case 'prod': return '20'
+        default: return '10'
+    }
+}
+
+def getMongoReplicas() {
+    return '3'
+}
+
+def getMongoStorage() {
+    switch(params.ENVIRONMENT) {
+        case 'dev': return '20Gi'
+        case 'qat': return '20Gi'
+        case 'uat': return '100Gi'
+        case 'prod': return '500Gi'
+        default: return '20Gi'
+    }
+}
+
+def getRedisStorage() {
+    switch(params.ENVIRONMENT) {
+        case 'dev': return '5Gi'
+        case 'qat': return '5Gi'
+        case 'uat': return '20Gi'
+        case 'prod': return '50Gi'
+        default: return '5Gi'
+    }
+}
+
+def getKafkaStorage() {
+    switch(params.ENVIRONMENT) {
+        case 'dev': return '50Gi'
+        case 'qat': return '50Gi'
+        case 'uat': return '200Gi'
+        case 'prod': return '500Gi'
+        default: return '50Gi'
+    }
+}
+
+def getIngressClass() {
+    if (params.ENVIRONMENT in ['uat', 'prod']) {
+        return 'alb'
+    }
+    return 'nginx'
+}
+
+def getIngressHost() {
+    switch(params.ENVIRONMENT) {
+        case 'dev': return 'app-dev.example.com'
+        case 'qat': return 'app-qat.example.com'
+        case 'uat': return 'app-uat.example.com'
+        case 'prod': return 'app-prod.example.com'
+        default: return 'app-dev.example.com'
+    }
+}
+

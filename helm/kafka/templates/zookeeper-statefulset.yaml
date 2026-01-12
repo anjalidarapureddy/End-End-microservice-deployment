@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "kafka.fullname" . }}-zookeeper
+  labels:
+    {{- include "kafka.labels" . | nindent 4 }}
+    component: zookeeper
+spec:
+  serviceName: {{ include "kafka.fullname" . }}-zookeeper
+  replicas: {{ .Values.zookeeper.replicas }}
+  selector:
+    matchLabels:
+      {{- include "kafka.selectorLabels" . | nindent 6 }}
+      component: zookeeper
+  template:
+    metadata:
+      labels:
+        {{- include "kafka.selectorLabels" . | nindent 8 }}
+        component: zookeeper
+    spec:
+      serviceAccountName: {{ include "kafka.serviceAccountName" . }}
+      containers:
+      - name: zookeeper
+        image: "{{ .Values.zookeeper.image.repository }}:{{ .Values.zookeeper.image.tag }}"
+        ports:
+        - name: zookeeper
+          containerPort: 2181
+          protocol: TCP
+        env:
+        - name: ZOOKEEPER_CLIENT_PORT
+          value: "2181"
+        - name: ZOOKEEPER_SERVER_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: ZOOKEEPER_SERVERS
+          value: "{{ include "kafka.fullname" . }}-zookeeper-0.{{ include "kafka.fullname" . }}-zookeeper:2888:3888;{{ include "kafka.fullname" . }}-zookeeper-1.{{ include "kafka.fullname" . }}-zookeeper:2888:3888;{{ include "kafka.fullname" . }}-zookeeper-2.{{ include "kafka.fullname" . }}-zookeeper:2888:3888"
+        volumeMounts:
+        - name: zookeeper-data
+          mountPath: /var/lib/zookeeper/data
+        resources:
+          {{- toYaml .Values.zookeeper.resources | nindent 10 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if .Values.zookeeper.persistence.enabled }}
+  volumeClaimTemplates:
+  - metadata:
+      name: zookeeper-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: {{ .Values.zookeeper.persistence.storageClass }}
+      resources:
+        requests:
+          storage: {{ .Values.zookeeper.persistence.size }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kafka.fullname" . }}-zookeeper
+  labels:
+    {{- include "kafka.labels" . | nindent 4 }}
+    component: zookeeper
+spec:
+  ports:
+  - port: 2181
+    targetPort: 2181
+    protocol: TCP
+    name: zookeeper
+  clusterIP: None
+  selector:
+    {{- include "kafka.selectorLabels" . | nindent 4 }}
+    component: zookeeper
+

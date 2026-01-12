@@ -1,0 +1,30 @@
+stages:
+  - build
+  - deploy
+
+variables:
+  IMAGE_NAME: myrepo/frontend
+  HELM_CHART: helm/frontend
+
+build:
+  stage: build
+  script:
+    - npm install
+    - npm run build
+    - docker build -t $IMAGE_NAME:$CI_COMMIT_SHA .
+    - docker push $IMAGE_NAME:$CI_COMMIT_SHA
+  only:
+    - develop
+    - release/*
+    - main
+
+deploy_dev:
+  stage: deploy
+  script:
+    - helm upgrade --install frontend $HELM_CHART \
+      -f helm/values-global.yaml \
+      -f helm/frontend/values-dev.yaml \
+      --set image.tag=$CI_COMMIT_SHA \
+      -n app-dev
+  only:
+    - develop

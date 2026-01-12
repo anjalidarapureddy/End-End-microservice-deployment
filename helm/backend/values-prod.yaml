@@ -1,0 +1,28 @@
+replicaCount: 4
+
+image:
+  repository: myrepo/backend
+  tag: prod-release
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "1500m"
+    memory: "2Gi"
+
+hpa:
+  min: 4
+  max: 15
+  cpu: 60
+
+config:
+  mongoUrl: mongodb://mongo.prod.svc.cluster.local:27017/appdb
+  redisHost: redis.prod.svc.cluster.local
+  kafkaBroker: kafka.prod.svc.cluster.local:9092
+
+secrets:
+  mongoUser: produser   # normally from Secrets Manager
+  mongoPassword: ******** #Create Secret via kubectl create secret generic ... and pass the value as a secret
+

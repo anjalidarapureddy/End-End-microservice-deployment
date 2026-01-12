@@ -1,0 +1,91 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<!--
+Jenkins Configuration Snippet
+This file can be imported into Jenkins to configure global settings
+-->
+<config>
+    <!-- Global Tool Configuration -->
+    <tools>
+        <hudson.plugins.docker.DockerTool>
+            <name>docker</name>
+            <installations>
+                <hudson.plugins.docker.DockerTool.DockerToolInstallation>
+                    <name>Docker</name>
+                    <properties>
+                        <hudson.tools.InstallSourceProperty>
+                            <installers>
+                                <hudson.tools.CommandInstaller>
+                                    <command>curl -fsSL https://get.docker.com -o get-docker.sh && sh get-docker.sh</command>
+                                    <toolHome>/usr/bin/docker</toolHome>
+                                </hudson.tools.CommandInstaller>
+                            </installers>
+                        </hudson.tools.InstallSourceProperty>
+                    </properties>
+                </hudson.plugins.docker.DockerTool.DockerToolInstallation>
+            </installations>
+        </hudson.plugins.docker.DockerTool>
+        
+        <hudson.plugins.kubernetes.KubernetesTool>
+            <name>kubectl</name>
+            <installations>
+                <hudson.plugins.kubernetes.KubernetesTool.KubernetesToolInstallation>
+                    <name>kubectl</name>
+                    <properties>
+                        <hudson.tools.InstallSourceProperty>
+                            <installers>
+                                <hudson.tools.CommandInstaller>
+                                    <command>curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && chmod +x kubectl && mv kubectl /usr/local/bin/</command>
+                                    <toolHome>/usr/local/bin/kubectl</toolHome>
+                                </hudson.tools.CommandInstaller>
+                            </installers>
+                        </hudson.tools.InstallSourceProperty>
+                    </properties>
+                </hudson.plugins.kubernetes.KubernetesTool.KubernetesToolInstallation>
+            </installations>
+        </hudson.plugins.kubernetes.KubernetesTool>
+        
+        <hudson.plugins.helm.HelmTool>
+            <name>helm</name>
+            <installations>
+                <hudson.plugins.helm.HelmTool.HelmToolInstallation>
+                    <name>helm</name>
+                    <properties>
+                        <hudson.tools.InstallSourceProperty>
+                            <installers>
+                                <hudson.tools.CommandInstaller>
+                                    <command>curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash</command>
+                                    <toolHome>/usr/local/bin/helm</toolHome>
+                                </hudson.tools.CommandInstaller>
+                            </installers>
+                        </hudson.tools.InstallSourceProperty>
+                    </properties>
+                </hudson.plugins.helm.HelmTool.HelmToolInstallation>
+            </installations>
+        </hudson.plugins.helm.HelmTool>
+    </tools>
+    
+    <!-- Global Environment Variables -->
+    <globalNodeProperties>
+        <hudson.slaves.EnvironmentVariablesNodeProperty>
+            <envVars>
+                <hudson.slaves.EnvironmentVariablesNodeProperty.Entry>
+                    <key>AWS_REGION</key>
+                    <value>us-east-1</value>
+                </hudson.slaves.EnvironmentVariablesNodeProperty.Entry>
+                <hudson.slaves.EnvironmentVariablesNodeProperty.Entry>
+                    <key>AWS_ACCOUNT_ID</key>
+                    <value>YOUR_AWS_ACCOUNT_ID</value>
+                </hudson.slaves.EnvironmentVariablesNodeProperty.Entry>
+                <hudson.slaves.EnvironmentVariablesNodeProperty.Entry>
+                    <key>REGISTRY_DEV</key>
+                    <value>registry-dev.example.com</value>
+                </hudson.slaves.EnvironmentVariablesNodeProperty.Entry>
+                <hudson.slaves.EnvironmentVariablesNodeProperty.Entry>
+                    <key>DEPLOYMENT_TEAM_EMAIL</key>
+                    <value>devops@example.com</value>
+                </hudson.slaves.EnvironmentVariablesNodeProperty.Entry>
+            </envVars>
+        </hudson.slaves.EnvironmentVariablesNodeProperty>
+    </globalNodeProperties>
+</config>
+

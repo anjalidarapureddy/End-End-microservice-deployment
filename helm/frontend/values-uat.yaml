@@ -1,0 +1,26 @@
+replicaCount: 3
+
+image:
+  repository: myrepo/frontend
+  tag: uat-release
+  
+service:
+  type: ClusterIP
+
+ingress:
+  enabled: true
+  className: alb
+  host: uat.example.com
+
+resources:
+  requests:
+    cpu: "300m"
+    memory: "512Mi"
+  limits:
+    cpu: "800m"
+    memory: "1Gi"
+
+hpa:
+  min: 3
+  max: 8
+  cpu: 65

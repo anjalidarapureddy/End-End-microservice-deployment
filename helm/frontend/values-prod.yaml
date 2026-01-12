@@ -1,0 +1,27 @@
+replicaCount: 4
+
+image:
+  repository: myrepo/frontend
+  tag: prod-release
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+
+ingress:
+  enabled: true
+  className: alb
+  host: app.example.com
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "1500m"
+    memory: "2Gi"
+
+hpa:
+  min: 4
+  max: 15
+  cpu: 60

@@ -1,0 +1,40 @@
+# Kubernetes
+*.kubeconfig
+kubeconfig
+*.pem
+*.key
+*.crt
+
+# Helm
+.helm/
+
+# Secrets
+secrets/
+*.secret
+*.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Build artifacts
+dist/
+build/
+*.tar.gz
+

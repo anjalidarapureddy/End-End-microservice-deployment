@@ -1,0 +1,23 @@
+replicaCount: 2
+
+image:
+  repository: myrepo/frontend
+  tag: qat-release
+  
+ingress:
+  enabled: true
+  className: nginx
+  host: qat.example.local
+
+resources:
+  requests:
+    cpu: "200m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+hpa:
+  min: 2
+  max: 5
+  cpu: 70

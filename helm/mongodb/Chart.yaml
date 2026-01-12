@@ -1,0 +1,13 @@
+apiVersion: v2
+name: mongodb
+description: MongoDB StatefulSet Helm Chart
+type: application
+version: 1.0.0
+appVersion: "6.0"
+keywords:
+  - mongodb
+  - database
+  - nosql
+maintainers:
+  - name: DevOps Team
+
